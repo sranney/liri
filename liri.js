@@ -155,13 +155,13 @@ function twittByKeyW(keyword){
 }
 
 //search function for spotify - inquirer to ask search by band, album or song
-//
+//inquirer then takes that answer and asks for specific search for band, album or song (supply name that you want to search)
 function spotifyChooseSearch(){
 	inquirer.prompt([{name:"typeofSearch",message:"Please choose whether you want to search for - a band, an album or a song",choices:["band","album","song"],type:"list"}]).then(function(response1){
 		if(response1.typeofSearch.length==0){spotifyChooseSearch();} else {			
 			inquirer.prompt([{name:"query",message:"Please enter the name of the "+response1.typeofSearch+" that you would like to search for.",type:"input"}]).then(function(response2){
 				if(response2.query.length==0 && response1.typeofSearch != "song"){spotifyChooseSearch();} else {
-					if(response1.typeofSearch=="band"){
+					if(response1.typeofSearch=="band"){//then it runs the appropriate function - search by band, search by album, search by song
 						spotifyBandSearch(response2.query);
 					} else if(response1.typeofSearch=="album"){
 						spotifyAlbumSearch(response2.query);
@@ -174,42 +174,48 @@ function spotifyChooseSearch(){
 	});
 }
 
+//search by band
 function spotifyBandSearch(bandName){
 	spotifyAPI.clientCredentialsGrant()
 	.then(function(data) {
 	    // Save the access token so that it's used in future calls
 	    spotifyAPI.setAccessToken(data.body['access_token']);
-	    return spotifyAPI.searchArtists(bandName)
+	    return spotifyAPI.searchArtists(bandName)//performs api search for band name
 	}, function(err) {
 	    console.log('Something went wrong when retrieving an access token', err.message);
 	}).then(function(data){
 		var artistResults = data.body.artists.items;
-		var artists = [];
+		var artists = [];//often times the result of the search will return multiple bands with the name
+		//for instance, if you search for saxophonist Charlie Parker, you'd get Charlie Parker, Charlie Parker Quintet, Charlie Parker Quartet and a bunch of other names
+		//so I'm building this so that the user can specify the specific result that they want
+		//I do this by passing all of the results to an artists array, which I then present as an inquirer prompt list
 		var selectedAlbum,selectedArtist;
 
 		for ( var i = 0 ; i < artistResults.length ; i++ ) {
 			artists.push(artistResults[i].name);
 		}
+
 		inquirer.prompt([{name:"artistChoice",message:"Below is a list of returned artists. Choose an artist to see their albums.",choices:artists,type:"list"}]).then(function(response3){
 			selectedArtist = response3.artistChoice;
-			return spotifyAPI.searchAlbums("artist:" + response3.artistChoice)
-		}).then(function(data2){
+			return spotifyAPI.searchAlbums("artist:" + response3.artistChoice)//the chosen album is then searched for and returned
+		}).then(function(data2){//the value returned from searchAlbums allows me to use a second .then function which I can then put the resulting data into to do stuff with
 			var artistDisco = data2.body.albums.items;
-			var artistDiscoID = [];
+			var artistDiscoID = [];//the ids are important because this allows future exact searches to occur based on what the user has specified as their intended search
+			//below I push the attribute id for the albums.items objects to this array - these are unique keys for the different albums that are necessary in order to retrieve the proper album's tracks
 			var albums = [];
 			for ( var i = 0 ; i < artistDisco.length ; i++ ){
 				albums.push(artistDisco[i].name);
 				artistDiscoID.push(artistDisco[i].id);
 			}
 			inquirer.prompt([{name:"albumChoice",message:"Below is a list of returned albums. Choose one to see the album's songs.",choices:albums,type:"list"}]).then(function(response4){
-				selectedAlbum = response4.albumChoice;
-				var selectedAlbumElement = albums.indexOf(response4.albumChoice);
-				var selectedAlbumElementID = artistDiscoID[selectedAlbumElement];
-				return spotifyAPI.getAlbumTracks(selectedAlbumElementID)							
-			}).then(function(data3){
+				selectedAlbum = response4.albumChoice;//get album name chosen by user
+				var selectedAlbumElement = albums.indexOf(response4.albumChoice);//find which element of the albums index was chosen
+				var selectedAlbumElementID = artistDiscoID[selectedAlbumElement];//get the id for this album from the id array
+				return spotifyAPI.getAlbumTracks(selectedAlbumElementID)//search bsed on that id for album tracks
+			}).then(function(data3){//this is data returned from the spotifyAPI.getAlbumTracks request
 				console.log("Here is a list of the songs on " + selectedAlbum + " recorded by " + selectedArtist + ".");
 				var albumTracks = data3.body.items;
-				for ( var i = 0 ; i < albumTracks.length ; i++){
+				for ( var i = 0 ; i < albumTracks.length ; i++){//print out the returned song list
 					var statement = "-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-*-";
 					statement += "\nSong name: " + albumTracks[i].name;
 					statement += "\nDisc #: " + albumTracks[i].disc_number;
@@ -221,26 +227,21 @@ function spotifyBandSearch(bandName){
 					console.log(statement);
 				}
 
-				fs.appendFile("log.txt","\nnew spotify action;",function(err){
-					fs.appendFile("log.txt","\nuser searched: band;",function(err){
-						fs.appendFile("log.txt","\nuser specified band: " +bandName + ";",function(err){
-								fs.appendFile("log.txt","\nuser chose result \"" + bandName + "\" and viewed tracks for album \"" + selectedAlbum + "\";",function(err){
-									var time = "\n" + moment().format().replace("T"," ") + ";\n--**--**--**--**--**--**--**--**--**--**--**--**--**";
-
-									fs.appendFile("log.txt",time,function(err){
-										doAnotherAction();
-									});			
-								});
-						});
-					});
-				});									
+				var appendStatement = "\nnew spotify action;";//print to log file
+				appendStatement += "\nuser searched: band;";
+				appendStatement += "\nuser specified band: " +bandName + ";";
+				appendStatement += "\nuser chose result \"" + bandName + "\" and viewed tracks for album \"" + selectedAlbum + "\";";
+				var time = "\n" + moment().format().replace("T"," ") + ";\n--**--**--**--**--**--**--**--**--**--**--**--**--**";
+				appendStatement += time;
+				fs.appendFile("log.txt",appendStatement,function(err){doAnotherAction();});
 			});
 		});
 	});
 }
 
+//function for searching by album
 function spotifyAlbumSearch(albumName){
-	spotifyAPI.clientCredentialsGrant()
+	spotifyAPI.clientCredentialsGrant()//send credentials and perform a spotify search on album
 	.then(function(data) {
 	    // Save the access token so that it's used in future calls
 	    spotifyAPI.setAccessToken(data.body['access_token']);
@@ -251,19 +252,20 @@ function spotifyAlbumSearch(albumName){
 		var artists = [];
 		var albumResults = data.body.albums.items;
 		var albumIDs = [];
-		for ( var i = 0 ; i < albumResults.length; i ++ ) {
+		for ( var i = 0 ; i < albumResults.length; i ++ ) {//push artists and albums returned for album search to artists array and push album ids to albumids array for same purpose as in the artist function
 			artists.push(albumResults[i].artists[0].name + " - " + albumResults[i].name);
 			albumIDs.push(albumResults[i].id);
 		}
 		var selectedArtistAlbum;
+		//prompt user to choose from resulting artist, album list
 		inquirer.prompt([{name:"artistAlbum",message:"Here are the results of the album search. Please choose the artist - album that you would like to search.",choices:artists,type:"list"}]).then(function(response3){
 			selectedArtistAlbum = response3.artistAlbum;
-			var selectedAlbumElement = artists.indexOf(response3.artistAlbum);
-			var selectedAlbumElementID = albumIDs[selectedAlbumElement];
-			return spotifyAPI.getAlbumTracks(selectedAlbumElementID)
-		}).then(function(data2){
+			var selectedAlbumElement = artists.indexOf(response3.artistAlbum);//get index element of user's choice in the artists array
+			var selectedAlbumElementID = albumIDs[selectedAlbumElement];//get album id
+			return spotifyAPI.getAlbumTracks(selectedAlbumElementID)//search for album tracks with that id
+		}).then(function(data2){//this is the result of the returned result from the function getAlbumTracks above
 			var albumTracks = data2.body.items;
-			console.log("Here are the tracks for " + selectedArtistAlbum + ":")
+			console.log("Here are the tracks for " + selectedArtistAlbum + ":")//print to screen the tracks for the album
 			for ( var i = 0 ; i < albumTracks.length ; i++){
 				var minutes = Math.floor(albumTracks[i].duration_ms/(60*1000)) % 60;
 				var seconds = Math.floor(albumTracks[i].duration_ms/1000) % 60;
@@ -275,7 +277,7 @@ function spotifyAlbumSearch(albumName){
 				statement += "\nLink:" + albumTracks[i].external_urls.spotify;
 				console.log(statement);
 			}
-			var appendFileStatement = "\nnew spotify action;"
+			var appendFileStatement = "\nnew spotify action;"//print to log file
 			appendFileStatement += "\nuser searched: Album;";
 			appendFileStatement += "\nuser specified Album: " + albumName + ";";
 			appendFileStatement += "\nuser chose result \"" + selectedArtistAlbum + "\" and viewed tracks for the album;"
@@ -288,8 +290,9 @@ function spotifyAlbumSearch(albumName){
 	});
 }
 
+//function for searching songs on spotify
 function spotifySongSearch(songName,random){
-	if(songName.length > 0){
+	if(songName.length > 0){//part of the required functionality in this assignment is that the user can choose to provide a song name or not provide a song name
 		var searchedSong = songName;
 	} else {//where the song is set if the user does not provide a song
 		var searchedSong = "The Black Crow";
@@ -297,38 +300,38 @@ function spotifySongSearch(songName,random){
 		var submethod = "default";
 	}
 	
-	var songs = [];
-	var songIDs = [];
-	var songDurs = [];				
+	var songs = [];//for pushing found songs to 
+	var songIDs = [];//for pushing ids of songs to - for same purpose as albums above
 	spotifyAPI.clientCredentialsGrant()
 	.then(function(data) {
 	    // Save the access token so that it's used in future calls
 	    spotifyAPI.setAccessToken(data.body['access_token']);
-	    return spotifyAPI.searchTracks(searchedSong)
+	    return spotifyAPI.searchTracks(searchedSong)//search for song
 	}, function(err) {
 	    console.log('Something went wrong when retrieving an access token', err.message);
-	}).then(function(data){
+	}).then(function(data){//for data returned from searchTracks above
 
 		var songData = data.body.tracks.items;
 
-		if(searchedArtist ==null || searchedArtist ==undefined){
+		if(searchedArtist ==null || searchedArtist ==undefined){//for when the user actually specifies the song - nothing that they have done has resulted in searchedArtist being set, so this is just a way for me to identify that
 
 			for (var i = 0 ; i < songData.length ; i++){
 				songs.push("Song: " + songData[i].name + "; Artist: " + songData[i].album.artists[0].name + "; Album: " + songData[i].album.name);
 				songIDs.push(songData[i].id);
-			}
+			}//pushing songs and ids to arrays
 
+			//request user to choose one of the songs from the resulting list
 			inquirer.prompt([{name:"songChoice",message:"Here are the returned results for song search on \"" + searchedSong + "\". Please choose one to see more information:",choices:songs,type:"list"}]).then(function(response3){
-				var selectedSongElement = songs.indexOf(response3.songChoice);
-				var selectedSongElementID = songIDs[selectedSongElement];
-				return spotifyAPI.getTrack(selectedSongElementID)						
+				var selectedSongElement = songs.indexOf(response3.songChoice);//when the user has chosen the song, find element of song in songs array
+				var selectedSongElementID = songIDs[selectedSongElement];//use that element index to find the appropriate song id in songIDs
+				return spotifyAPI.getTrack(selectedSongElementID)//then search for track with that ID in the getTrack function
 			},function(err) {
 				console.log("Something went wrong when retrieving an access token",err.message);
 			}).then(function(data){
 				var songObj = data.body;
-				spotifyToConsole_song(songObj);
+				spotifyToConsole_song(songObj);//print parsed data from songObj to the console - see function below
 				var method = random || false;
-				if(!method){
+				if(!method){//if method not provided, the user actually specified the search, so print accordingly to log.txt
 					var appendFileStatement = "\nnew spotify action;"
 					appendFileStatement += "\nuser searched: song;"
 					appendFileStatement += "\nuser specified song: " +songName + ";"
@@ -343,21 +346,20 @@ function spotifySongSearch(songName,random){
 				});											
 			});
 
-		} else { 
+		} else { //when the user has not specified song, thus defaulting to The Black Crow by Songs: Ohia
 
-			for (var i = 0 ; i < songData.length ; i++){
+			for (var i = 0 ; i < songData.length ; i++){//filtering through results to find the song by Songs:Ohia and setting the songID to be the song id for that artist's song
 				if(songData[i].album.artists[0].name == searchedArtist){
 					var songID = songData[i].id;
 				}
 			}
 			searchedArtist = null;
-			spotifyAPI.getTrack(songID).then(function(data){
+			spotifyAPI.getTrack(songID).then(function(data){//search by songID for song using getTrack
 				var songObj = data.body;
-				spotifyToConsole_song(songObj);
-				var appendFileStatement = "\nnew spotify action;"
+				spotifyToConsole_song(songObj);//print to console parsed data from songObj
+				var appendFileStatement = "\nnew spotify action;"//print to log
 				appendFileStatement += "\nuser searched: song;"
-				appendFileStatement += "\nuser specified song: " +songName + ";"
-				appendFileStatement += "\nuser viewed information on song " + data.body.name + " by " + data.body.album.artists[0].name + ";";
+				appendFileStatement += "\nuser did not specify song;"
 				var time = "\n" + moment().format().replace("T"," ") + ";\n--**--**--**--**--**--**--**--**--**--**--**--**--**";
 				appendFileStatement += time;
 				fs.appendFile("log.txt",appendFileStatement,function(err){
@@ -385,26 +387,29 @@ function spotifyToConsole_song(songObj){//this was repeated multiple times so I 
 	console.log(statement);
 }
 
-function OMDBer(movie,textToLog){
+function OMDBer(movie,textToLog){//will contain a movie only when called in random.txt function where a movie will be parsed from random.txt
 
 	if(movie!=null&&movie!=undefined){
 		OMDBretriever(movie,textToLog);
-	} else {
+	} else {//the main method of using OMDBer will be without having a movie name passed to the function, thus inquirer will prompt user to provide a movie
 		inquirer.prompt([{name:"movie",message:"Please enter the name of the movie or the show that you would like to search for",type:"input"}]).then(function(inqResponse){
 			inqResponse.movie!=""? OMDBretriever(inqResponse.movie) : OMDBretriever("The Third Man");
+			//if user doesn't enter a movie name, have the default movie searched for be The Third Man
 		});
 	}
 }
 
+//OMDB search function
 function OMDBretriever(showName,textToLog){
 	var movieObj;
 	request("http://www.omdbapi.com/?t=" + showName + "&y=&plot=full&r=json&apikey=40e9cece", function (error, response, body) {
+		//OMDBretriever uses request function with variable showname to retrieve data
 		if(error){
 			console.log("Error: " + error);
 		} else {
-			movieObj = JSON.parse(body);
-			if(movieObj.Title!=undefined){
-				var statement = "Here is information on that movie";
+			movieObj = JSON.parse(body);//body is returned as a string, so I parse it here
+			if(movieObj.Title!=undefined){//if movie was found do the following, otherwise, return that no movie was found
+				var statement = "Here is information on that movie";//print to console
 				statement += "\n//////////////////////////////////////////////////////";
 				statement += "\nTitle of Movie: " + movieObj.Title;
 				statement += "\nYear of Release: " + movieObj.Year;
@@ -436,12 +441,12 @@ function OMDBretriever(showName,textToLog){
 				var statement = "No movie in database by that name!";
 			}
 			console.log(statement);
-
+			//append to log.txt
 			var time = "\n" + moment().format().replace("T"," ") + ";\n--**--**--**--**--**--**--**--**--**--**--**--**--**";
 			var appendFileStatement = "\nnew omdb action;";
 			appendFileStatement += "\nmovie searched: " + movieObj.Title + ";";
 			appendFileStatement += "\n" + time;
-			var appendText = textToLog || appendFileStatement;
+			var appendText = textToLog || appendFileStatement;//if textToLog is not null, when random function has called the omdb functions, then set appendText to textToLog - otherwise set it to the appendFIleStatement just created
 			fs.appendFile("log.txt",appendText,function(err){
 				doAnotherAction();
 			});
@@ -449,22 +454,26 @@ function OMDBretriever(showName,textToLog){
 	});
 }
 
-function twilioer(message){
-	inquirer.prompt([{name:"address",message:message,type:"input"}]).then(function(response1){
+//i know. kind of ridiculous to include this in a terminal app. was just very curious if i could get this to work. I want to use this for other projects
+function twilioer(message){//twilio service function
+	inquirer.prompt([{name:"address",message:message,type:"input"}]).then(function(response1){//address will be a phone number
+		//message asks user to enter phone number
+		//set it up this way so that if the user doesn't provide a valid number (which is determined below) the user will be prompted again to specify a valid phone number
 		var phone = response1.address.replace(/\./g,"").replace(/\-/g,"").replace(/\(/g,"").replace(/\)/g,"");
-		if(phone.length==10&&!phone.match(/[a-z]/i)){
-			phone="+1"+phone;
+		if( phone.length==10 && !phone.match(/[a-z]/i) ){//makes sure that the user has entered a number that contains 10 digits and that does not contain any letters
+			phone="+1"+phone;//messages.create requires that the number has a "+1" on the beginning of it
 			
-			inquirer.prompt([{name:"message",message:"Please enter the message that you'd like to send",type:"input"}]).then(function(response2){
+			inquirer.prompt([{name:"message",message:"Please enter the message that you'd like to send",type:"input"}]).then(function(response2){//prompts user to enter a message
 				var message = response2.message;
 				
 				var twiliokeys = require("./twilio_keys");
 				const client = require("twilio")(twiliokeys.Acc_SID,twiliokeys.Auth_Tkn);
-				client.messages.create({
+				client.messages.create({//creates and sends message
 					from:twiliokeys.fromPhone,
 					to:phone,
 					body: message
 				});
+				//print to log file
 				var time = "\n" + moment().format().replace("T"," ") + ";\n--**--**--**--**--**--**--**--**--**--**--**--**--**";
 				fs.appendFile("log.txt","\nnew twilio action;",function(err){
 					fs.appendFile("log.txt","\nmessage sent to " + phone + ";",function(err){
@@ -474,7 +483,7 @@ function twilioer(message){
 					});
 				});
 				
-				doAnotherAction();
+				doAnotherAction();//prompts user whether they want to perform another action
 			});
 		} else {
 		 	twilioer("The number you provided was not a valid phone number. Please enter a valid number.");
